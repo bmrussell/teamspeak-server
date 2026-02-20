@@ -6,7 +6,7 @@ This Ansible playbook automates the deployment of a complete TeamSpeak 3 server 
 
 **System Administration:**
 - Updates system packages and installs essential utilities (curl, wget, git, vim, neovim, bzip2, tar)
-- Configures kernel-level iptables firewall with explicit ACCEPT rules for SSH and TeamSpeak services
+- Configures kernel-level iptables firewall with explicit ACCEPT rules for SSH and TeamSpeak services **NOTE**: These rules are based on Oracle Ubuntu Linux so may differ for yoour hosting provider.
 - Sets up fail2ban for SSH brute-force protection with configurable ban policies
 
 **TeamSpeak Server Deployment:**
