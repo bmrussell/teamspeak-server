@@ -304,6 +304,100 @@
         state: started
       become: yes
       when: not ansible_check_mode
+    
+    - name: Download DynDNS client (NoIP DUC)
+      shell: |
+        cd /tmp
+        wget --content-disposition https://www.noip.com/download/linux/latest
+      args:
+        creates: /tmp/noip-duc_*.tar.gz
+      become: yes
+    
+    - name: Create /tmp/noip directory
+      file:
+        path: /tmp/noip
+        state: directory
+        mode: '0755'
+      become: yes
+    
+    - name: Extract DynDNS client archive
+      shell: |
+        cd /tmp
+        tar -xf noip-duc_*.tar.gz -C /tmp/noip --strip-components=1
+      args:
+        creates: /tmp/noip/binaries
+      become: yes
+    
+    - name: Install noip-duc package
+      shell: |
+        cd /tmp/noip/binaries
+        apt install -y ./noip-duc_*_amd64.deb
+      args:
+        creates: /usr/bin/noip-duc
+      become: yes
+    
+    - name: Create noip system user
+      user:
+        name: noip
+        system: yes
+        shell: /usr/sbin/nologin
+        state: present
+      become: yes
+    
+    - name: Create /etc/noip-duc directory
+      file:
+        path: /etc/noip-duc
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: yes
+    
+    - name: Create noip-duc environment file
+      copy:
+        content: |
+          USERNAME={{ dyndns_username }}
+          PASSWORD={{ dyndns_password }}
+        dest: /etc/noip-duc/env
+        owner: noip
+        group: noip
+        mode: '0600'
+      become: yes
+    
+    - name: Create noip-duc systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=No-IP Dynamic Update Client
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=noip
+          EnvironmentFile=/etc/noip-duc/env
+          ExecStart=/usr/bin/noip-duc -g {{ dyndns_hostname }} --username $USERNAME --password $PASSWORD
+          Restart=on-failure
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/noip-duc.service
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+    
+    - name: Reload systemd daemon for noip-duc service
+      systemd:
+        daemon_reload: yes
+      become: yes
+    
+    - name: Enable and start noip-duc service
+      systemd:
+        name: noip-duc
+        enabled: yes
+        state: started
+      become: yes
+      when: not ansible_check_mode
   
   handlers:
     - name: restart fail2ban

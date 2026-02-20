@@ -17,6 +17,13 @@ This Ansible playbook automates the deployment of a complete TeamSpeak 3 server 
 - Creates a systemd service file for automatic startup and lifecycle management
 - Enables the service to auto-start on system boot
 
+**Dynamic DNS (DynDNS) Management:**
+- Downloads and installs NoIP Dynamic Update Client (noip-duc)
+- Creates a dedicated system user (noip) for service isolation
+- Configures DynDNS environment variables from encrypted vault
+- Creates systemd service file for automatic startup and lifecycle management
+- Automatically tracks hostname changes and updates DNS records
+
 **Security Features:**
 - Runs TeamSpeak under a non-login system user account
 - Proper file ownership and permissions throughout
@@ -63,6 +70,18 @@ To edit encrypted secrets:
 ```bash
 ansible-vault edit vault/secrets.yml
 ```
+
+Add the following variables to your vault file for DynDNS configuration:
+```yaml
+dyndns_username: "your_noip_username"
+dyndns_password: "your_noip_password"
+dyndns_hostname: "myteamspeakservername.ddns.net"
+```
+
+Replace with your actual:
+- **dyndns_username**: Your NoIP account username
+- **dyndns_password**: Your NoIP account password
+- **dyndns_hostname**: Your desired dynamic DNS hostname (e.g., `myteamspeakserver.ddns.net`)
 
 ### 4. Run the Playbook
 
@@ -234,41 +253,59 @@ Tell me what features or tasks you'd like to add to the playbook!
 
 ## ADDITIONAL
 
-### DYNDNS SETUP
-After installing [DynDNs](https://www.noip.com/download?page=linux):
-1. Create `/etc/systemd/system/noip-duc.service`
+### DYNDNS (AUTOMATED)
 
-```ini
-[Unit]
-Description=No-IP Dynamic Update Client
-After=network.target
+The DynDNS installation and configuration is now fully automated in the playbook. It performs the following steps automatically:
 
-[Service]
-Type=simple
-User=noip
-EnvironmentFile=/etc/noip-duc/env
-ExecStart=/usr/bin/noip-duc -g myteamspeakservername.ddns.net --username $USERNAME --password $PASSWORD
-Restart=on-failure
+1. **Downloads and installs** the NoIP Dynamic Update Client (noip-duc)
+2. **Creates a system user** (noip) with restricted privileges
+3. **Configures credentials** from your vault secrets file in `/etc/noip-duc/env`
+4. **Creates a systemd service** at `/etc/systemd/system/noip-duc.service`
+5. **Enables and starts the service** on first run and automatically on boot
 
-[Install]
-WantedBy=multi-user.target
-```
+#### Verify DynDNS Service Status
+After the playbook completes, verify the DynDNS service:
 
-2. Create `/etc/noip-duc/env`
-```env
-USERNAME=your_username
-PASSWORD=your_password
-```
-3. Secure file
 ```bash
-sudo chown noip:noip /etc/noip-duc/env
-sudo chmod 600 /etc/noip-duc/env
-```
-
-4. Load Service
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable noip-duc
-sudo systemctl start noip-duc
+# Check service status
 sudo systemctl status noip-duc
+
+# View service logs
+sudo journalctl -u noip-duc -f
+
+# Check NoIP environment file permissions
+ls -la /etc/noip-duc/env
 ```
+
+Expected results:
+- Service should be active and running
+- Credentials should be securely stored with 0600 permissions
+- Logs should show successful DNS updates
+
+#### Manual DynDNS Configuration (If Needed)
+
+If you need to manually modify DynDNS settings after deployment:
+
+1. **Update credentials** in the vault file:
+   ```bash
+   ansible-vault edit vault/secrets.yml
+   ```
+   Modify `dyndns_username`, `dyndns_password`, or `dyndns_hostname` as needed
+
+2. **Re-run the playbook** to apply changes:
+   ```bash
+   ansible-playbook playbook.yml -K -u $(whoami)
+   ```
+
+3. **Restart the service**:
+   ```bash
+   sudo systemctl restart noip-duc
+   ```
+
+#### DynDNS Service Configuration
+
+The systemd service file is located at `/etc/systemd/system/noip-duc.service` and includes:
+- Automatic restart on failure
+- Runs under the `noip` user for security
+- Loads credentials from `/etc/noip-duc/env`
+- Tracks hostname and updates DNS records automatically
