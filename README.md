@@ -1,4 +1,4 @@
-# Eedspeak Ansible Playbook
+# TeamSpeak Ansible Playbook
 
 ## Description
 
