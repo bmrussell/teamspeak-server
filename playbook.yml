@@ -1,0 +1,321 @@
+---
+- name: Eedspeak Server Configuration
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  
+  vars_files:
+    - vault/secrets.yml
+  
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      become: yes
+    
+    - name: Install essential packages
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - htop
+          - vim
+          - neovim
+          - bzip2
+          - tar
+          - fail2ban
+          - unattended-upgrades
+          - apt-listchanges
+          - openssh-server
+          - iptables-persistent
+        state: present
+      become: yes
+    
+    - name: Copy iptables rules file
+      copy:
+        src: iptables-rules.v4
+        dest: /etc/iptables/rules.v4
+        owner: root
+        group: root
+        mode: '0600'
+      become: yes
+    
+    - name: Apply iptables rules
+      shell: iptables-restore < /etc/iptables/rules.v4
+      become: yes
+      check_mode: no
+    
+    - name: Enable netfilter-persistent service for iptables persistence on boot
+      systemd:
+        name: netfilter-persistent
+        enabled: yes
+        state: started
+      become: yes
+      when: not ansible_check_mode
+    
+    - name: Configure fail2ban for SSH
+      copy:
+        content: |
+          [DEFAULT]
+          bantime = 3600
+          findtime = 600
+          maxretry = 5
+          
+          [ssh]
+          enabled = true
+          port = ssh
+          filter = ssh
+          logpath = %(ssh_log)s
+        dest: /etc/fail2ban/jail.local
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+      notify: restart fail2ban
+    
+    - name: Enable and start fail2ban
+      systemd:
+        name: fail2ban
+        enabled: yes
+        state: started
+      become: yes
+      when: not ansible_check_mode
+    
+    - name: Ensure SSH service is started to generate config
+      systemd:
+        name: ssh
+        enabled: yes
+        state: started
+      become: yes
+      when: not ansible_check_mode
+    
+    - name: Ensure ssh_config file exists
+      copy:
+        content: ""
+        dest: /etc/ssh/ssh_config
+        owner: root
+        group: root
+        mode: '0600'
+        force: no
+      become: yes
+      check_mode: no
+    
+    - name: Configure SSH hardening - disable root login
+      lineinfile:
+        path: /etc/ssh/ssh_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      become: yes
+      notify: restart ssh
+    
+    - name: Configure SSH hardening - disable password authentication
+      lineinfile:
+        path: /etc/ssh/ssh_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+      become: yes
+      notify: restart ssh
+    
+    - name: Configure SSH hardening - disable empty passwords
+      lineinfile:
+        path: /etc/ssh/ssh_config
+        regexp: '^#?PermitEmptyPasswords'
+        line: 'PermitEmptyPasswords no'
+      become: yes
+      notify: restart ssh
+    
+    - name: Configure SSH hardening - disable password-based sudo
+      lineinfile:
+        path: /etc/ssh/ssh_config
+        regexp: '^#?ChallengeResponseAuthentication'
+        line: 'ChallengeResponseAuthentication no'
+      become: yes
+      notify: restart ssh
+    
+    - name: Configure SSH hardening - allow only key-based authentication protocols
+      lineinfile:
+        path: /etc/ssh/ssh_config
+        regexp: '^#?AuthenticationMethods'
+        line: 'AuthenticationMethods publickey'
+      become: yes
+      notify: restart ssh
+    
+    - name: Configure SSH hardening - set max authentication attempts
+      lineinfile:
+        path: /etc/ssh/ssh_config
+        regexp: '^#?MaxAuthTries'
+        line: 'MaxAuthTries 3'
+      become: yes
+      notify: restart ssh
+    
+    - name: Configure unattended upgrades - enable auto security updates
+      copy:
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::Reboot "0";
+          APT::Periodic::Mail "root";
+          
+          Unattended-Upgrade::Package-Blacklist {
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::RemoveUnusedKernelPackages "true";
+          Unattended-Upgrade::RemoveNewUnnecessaryDependencies "true";
+          Unattended-Upgrade::Remove-Unused-Boot-Grub-Kernel-Packages "true";
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+    
+    - name: Create /opt/TeamSpeak directory
+      file:
+        path: /opt/TeamSpeak
+        state: directory
+      become: yes
+    
+    - name: Create TeamSpeak system user
+      user:
+        name: TeamSpeak
+        system: yes
+        home: /opt/TeamSpeak
+        shell: /usr/sbin/nologin
+        state: present
+      become: yes
+    
+    - name: Set ownership of /opt/TeamSpeak to TeamSpeak
+      file:
+        path: /opt/TeamSpeak
+        owner: TeamSpeak
+        group: TeamSpeak
+        recurse: yes
+      become: yes
+    
+    - name: Download TeamSpeak 3 server
+      get_url:
+        url: https://files.teamspeak-services.com/releases/server/3.13.7/teamspeak3-server_linux_amd64-3.13.7.tar.bz2
+        dest: /tmp/teamspeak3-server_linux_amd64-3.13.7.tar.bz2
+        mode: '0644'
+      become: yes
+    
+    - name: Unpack TeamSpeak server
+      shell: |
+        cd /opt/TeamSpeak
+        tar -xjf /tmp/teamspeak3-server_linux_amd64-3.13.7.tar.bz2 --strip-components=1
+      args:
+        creates: /opt/TeamSpeak/ts3server
+      become: yes
+    
+    - name: Set ownership of unpacked TeamSpeak files
+      file:
+        path: /opt/TeamSpeak
+        owner: TeamSpeak
+        group: TeamSpeak
+        recurse: yes
+      become: yes
+    
+    - name: Clean up TeamSpeak installer
+      file:
+        path: /tmp/teamspeak3-server_linux_amd64-3.13.7.tar.bz2
+        state: absent
+      become: yes
+    
+    - name: Accept TeamSpeak license
+      file:
+        path: /opt/TeamSpeak/.ts3server_license_accepted
+        state: touch
+        owner: TeamSpeak
+        group: TeamSpeak
+        mode: '0644'
+      become: yes
+    
+    - name: Remove existing TeamSpeak database if present
+      file:
+        path: /opt/TeamSpeak/ts3server.sqlitedb
+        state: absent
+      become: yes
+    
+    - name: Run TeamSpeak server startup script
+      become: yes
+      shell: sudo -u TeamSpeak bash -c '/opt/TeamSpeak/ts3server_minimal_runscript.sh > /opt/TeamSpeak/token.log 2>&1 & sleep 10; kill $! 2>/dev/null || true'
+    
+    - name: Create TeamSpeak systemd service file
+      copy:
+        content: |
+          [Unit]
+          Description=TeamSpeak 3 Server
+          Wants=network-online.target
+          After=network.target
+          
+          [Service]
+          WorkingDirectory=/opt/TeamSpeak
+          User=TeamSpeak
+          Type=forking
+          PIDFile=/opt/TeamSpeak/ts3server.pid
+          ExecStart=/opt/TeamSpeak/ts3server_startscript.sh start inifile=ts3server.ini
+          ExecStop=/opt/TeamSpeak/ts3server_startscript.sh stop
+          ExecReload=/opt/TeamSpeak/ts3server_startscript.sh restart
+          Restart=always
+          RestartSec=15
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/teamspeak.service
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+    
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      become: yes
+    
+    - name: Configure logrotate for TeamSpeak logs
+      copy:
+        content: |
+          /opt/TeamSpeak/logs/*.log {
+            daily
+            rotate 7
+            compress
+            delaycompress
+            notifempty
+            create 0640 TeamSpeak TeamSpeak
+            sharedscripts
+            postrotate
+              systemctl reload teamspeak > /dev/null 2>&1 || true
+            endscript
+          }
+        dest: /etc/logrotate.d/teamspeak
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+    
+    - name: Enable TeamSpeak service
+      systemd:
+        name: teamspeak
+        enabled: yes
+        state: started
+      become: yes
+      when: not ansible_check_mode
+  
+  handlers:
+    - name: restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
+      become: yes
+      when: not ansible_check_mode
+    
+    - name: restart ssh
+      systemd:
+        name: ssh
+        state: restarted
+      become: yes
+      when: not ansible_check_mode
