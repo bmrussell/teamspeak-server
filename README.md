@@ -230,3 +230,45 @@ Both IPv4 and IPv6 rules can be persisted (IPv6 rules go to `/etc/iptables/rules
 
 ## Next Steps
 Tell me what features or tasks you'd like to add to the playbook!
+
+
+## ADDITIONAL
+
+### DYNDNS SETUP
+After installing [DynDNs](https://www.noip.com/download?page=linux):
+1. Create `/etc/systemd/system/noip-duc.service`
+
+```ini
+[Unit]
+Description=No-IP Dynamic Update Client
+After=network.target
+
+[Service]
+Type=simple
+User=noip
+EnvironmentFile=/etc/noip-duc/env
+ExecStart=/usr/bin/noip-duc -g myteamspeakservername.ddns.net --username $USERNAME --password $PASSWORD
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2. Create `/etc/noip-duc/env`
+```env
+USERNAME=your_username
+PASSWORD=your_password
+```
+3. Secure file
+```bash
+sudo chown noip:noip /etc/noip-duc/env
+sudo chmod 600 /etc/noip-duc/env
+```
+
+4. Load Service
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable noip-duc
+sudo systemctl start noip-duc
+sudo systemctl status noip-duc
+```
