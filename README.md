@@ -76,6 +76,7 @@ Add the following variables to your vault file for DynDNS configuration:
 dyndns_username: "your_noip_username"
 dyndns_password: "your_noip_password"
 dyndns_hostname: "myteamspeakservername.ddns.net"
+ansible_become_pass: "your_pass"
 ```
 
 Replace with your actual:
